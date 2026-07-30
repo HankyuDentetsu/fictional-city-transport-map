@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>架空城市交通绘图台</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">▦</span><span>架空城市交通绘图台</span></div>
+      <div class="project-name"><label for="projectTitle">城市名称</label><input id="projectTitle" value="新曙光市" /></div>
+      <div class="file-actions">
+        <button id="newMap" class="quiet">新建</button>
+        <button id="saveMap" class="quiet">保存</button>
+        <button id="exportMap">导出 JSON</button>
+        <label for="importMap" class="button quiet">导入 JSON</label><input id="importMap" type="file" accept="application/json" hidden />
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="toolbar" aria-label="绘图工具">
+        <p class="tool-heading">绘制</p>
+        <button class="tool active" data-tool="select" title="选择 / 拖动画布 (V)"><span>⌖</span>选择</button>
+        <button class="tool" data-tool="road" title="绘制中可切换直线与曲线，右键结束 (R)"><span>╱</span>道路</button>
+        <button class="tool" data-tool="bus" title="只能吸附到道路，右键结束 (B)"><span>▰</span>公交线路</button>
+        <button class="tool" data-tool="metro" title="绘制中可切换直线与曲线，右键结束 (M)"><span>━</span>地铁线路</button>
+        <div id="drawModeControl" class="draw-mode" hidden>
+          <span>下一段</span>
+          <div><button class="active" data-draw-mode="line">直线</button><button data-draw-mode="curve">曲线</button></div>
+        </div>
+        <div id="levelControl" class="draw-level" hidden>
+          <span id="levelControlTitle">下一段层级</span><output id="drawLevelValue">地面 0</output>
+          <div><button id="levelDown" title="降低一层（↓）">↓</button><button id="levelUp" title="升高一层（↑）">↑</button></div>
+        </div>
+        <button class="tool" data-tool="station" title="单击放置站点 (S)"><span>◉</span>站点</button>
+        <button class="tool" data-tool="building" title="逐点绘制建筑轮廓，右键结束 (G)"><span>▣</span>建筑</button>
+        <button class="tool" data-tool="area" title="逐点绘制自定义区域，右键结束 (A)"><span>▧</span>区域</button>
+        <button class="tool" data-tool="label" title="单击放置地名或路名 (L)"><span>Ｔ</span>文字</button>
+        <button class="tool" data-tool="eraser" title="单击删除对象 (E)"><span>⌫</span>删除</button>
+        <div class="tool-hint">右键结束绘制<br />滚轮缩放画布</div>
+      </aside>
+
+      <section class="map-panel">
+        <div class="map-status"><span id="toolStatus">选择：单击对象进行编辑，拖动空白处平移</span><span id="zoomStatus">100%</span></div>
+        <div id="mapViewport" class="map-viewport">
+          <svg id="mapSvg" viewBox="0 0 1600 1000" xmlns="http://www.w3.org/2000/svg" aria-label="城市交通地图画布">
+            <defs>
+              <pattern id="smallGrid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#dce5e8" stroke-width="1" /></pattern>
+              <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#smallGrid)" /><path d="M 100 0 L 0 0 0 100" fill="none" stroke="#c9d6da" stroke-width="1.25" /></pattern>
+            </defs>
+            <rect id="mapBackground" width="1600" height="1000" fill="url(#grid)" />
+            <g id="mapContent"></g>
+            <g id="previewLayer"></g>
+          </svg>
+          <div id="emptyTip" class="empty-tip">选择左侧工具，开始构建你的城市</div>
+        </div>
+      </section>
+
+      <aside class="inspector">
+        <section>
+          <p class="panel-title">样式</p>
+          <div class="control"><label for="objectName">名称</label><input id="objectName" placeholder="未命名" /></div>
+          <div class="control"><label for="objectColor">颜色</label><input id="objectColor" type="color" value="#326c8a" /></div>
+          <div class="control" id="widthControl"><label for="objectWidth">线宽 <output id="widthValue">10</output></label><input id="objectWidth" type="range" min="3" max="30" value="10" /></div>
+          <div class="control" id="roadClassControl"><label for="roadClass">道路等级</label><select id="roadClass"><option value="expressway">高速公路</option><option value="primary">一级道路</option><option value="secondary">二级道路</option><option value="local">小路</option></select></div>
+          <div class="control" id="lineStyleControl"><label for="lineStyle">线路样式</label><select id="lineStyle"><option value="solid">实线</option><option value="dash">虚线</option></select></div>
+          <div class="control" id="labelSizeControl"><label for="labelSize">字号 <output id="labelSizeValue">22</output></label><input id="labelSize" type="range" min="12" max="42" value="22" /></div>
+          <button id="applyStyle" class="full">应用到已选对象</button>
+        </section>
+        <section class="layers">
+          <p class="panel-title">图层</p>
+          <label class="layer"><input type="checkbox" data-layer="roads" checked />道路 <span id="roadCount">0</span></label>
+          <label class="layer"><input type="checkbox" data-layer="buses" checked />公交线路 <span id="busCount">0</span></label>
+          <label class="layer"><input type="checkbox" data-layer="metros" checked />地铁线路 <span id="metroCount">0</span></label>
+          <label class="layer"><input type="checkbox" data-layer="stations" checked />站点 <span id="stationCount">0</span></label>
+          <label class="layer"><input type="checkbox" data-layer="buildings" checked />建筑 <span id="buildingCount">0</span></label>
+          <label class="layer"><input type="checkbox" data-layer="areas" checked />区域 <span id="areaCount">0</span></label>
+          <label class="layer"><input type="checkbox" data-layer="labels" checked />文字 <span id="labelCount">0</span></label>
+        </section>
+        <section class="help">
+          <p class="panel-title">使用说明</p>
+          <p>道路与地铁：逐点绘制时可随时切换“下一段”的直线或曲线，右键结束。</p>
+          <p>道路绘制中用 ↑↓ 改变下一段层级；同层交叉形成路口，相邻道路段改变层级形成匝道。</p>
+          <p>公交选路时也可用 ↑↓ 指定交叉位置要吸附的道路层级。</p>
+          <p>建筑与区域：逐点绘制边界，右键闭合并输入名称。</p>
+          <p>路口：平交时两路保持同层；需要立交时，把其中一条设置为桥梁或隧道。</p>
+          <p>站点和文字：单击画布后输入名称。道路名称也可直接填写在线段名称中。</p>
+        </section>
+      </aside>
+    </main>
+    <div id="toast" class="toast" role="status"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

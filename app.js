@@ -8,11 +8,51 @@
   const defaults = { road:{ color:'#506c79', width:16, name:'', elevation:'ground', roadClass:'primary' }, bus:{ color:'#2d8a57', width:6, name:'', lineStyle:'solid' }, metro:{ color:'#d14f51', width:8, name:'', lineStyle:'solid' }, station:{ color:'#d14f51', name:'' }, building:{ color:'#b7a58d', name:'' }, area:{ color:'#74a989', name:'' }, label:{ color:'#18394a', name:'', size:22 } };
   const roadClassStyles={expressway:{width:22,color:'#385d70'},primary:{width:16,color:'#506c79'},secondary:{width:11,color:'#6e7d82'},local:{width:6,color:'#899397'}};
   let data = { title:'新曙光市', roads:[], buses:[], metros:[], stations:[], buildings:[], areas:[], labels:[] };
-  let tool = 'select', selected = null, draft = null, drawMode = 'line', drawLevel = 0, view = { x:0, y:0, w:1600, h:1000 }, panning = null;
+  const INITIAL_VIEW = { x:0, y:0, w:1600, h:1000 };
+  const MIN_ZOOM = 25, MAX_ZOOM = 500;
+  let tool = 'select', selected = null, draft = null, drawMode = 'line', drawLevel = 0, view = { ...INITIAL_VIEW }, panning = null, spacePanning = false, suppressClick = false;
   const ids = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2,7)}`;
   const pointString = points => points.map(p => `${p.x},${p.y}`).join(' ');
   const midpoint = pts => pts[Math.floor(pts.length / 2)];
   const visible = k => document.querySelector(`[data-layer="${k}"]`).checked;
+  const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
+  const zoomPercent = () => 100 * INITIAL_VIEW.w / view.w;
+
+  function applyView() {
+    svg.setAttribute('viewBox',`${view.x} ${view.y} ${view.w} ${view.h}`);
+    const zoom=clamp(zoomPercent(),MIN_ZOOM,MAX_ZOOM);
+    $('#zoomStatus').textContent=`${Math.round(zoom)}%`;
+    $('#zoomSlider').value=Math.round(zoom/5)*5;
+    $('#viewPosition').textContent=`X ${Math.round(view.x+view.w/2)} · Y ${Math.round(view.y+view.h/2)}`;
+  }
+  function setZoom(percent,anchor=null) {
+    const target=clamp(percent,MIN_ZOOM,MAX_ZOOM),old={...view},ratio=(100*INITIAL_VIEW.w/target)/old.w;
+    const focus=anchor||{x:old.x+old.w/2,y:old.y+old.h/2};
+    view.w=old.w*ratio; view.h=old.h*ratio;
+    view.x=focus.x-(focus.x-old.x)*ratio; view.y=focus.y-(focus.y-old.y)*ratio;
+    applyView();
+  }
+  function panView(direction) {
+    const step=.18;
+    if(direction==='left')view.x-=view.w*step;if(direction==='right')view.x+=view.w*step;
+    if(direction==='up')view.y-=view.h*step;if(direction==='down')view.y+=view.h*step;
+    applyView();
+  }
+  function resetView() { view={...INITIAL_VIEW};applyView(); }
+  function allMapPoints() {
+    const points=[];
+    ['roads','buses','metros','buildings','areas'].forEach(kind=>data[kind].forEach(o=>points.push(...(o.points||[]))));
+    ['stations','labels'].forEach(kind=>data[kind].forEach(o=>points.push({x:o.x,y:o.y})));
+    return points.filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y));
+  }
+  function fitMap() {
+    const points=allMapPoints();if(!points.length){resetView();toast('画布为空，已恢复初始视图');return;}
+    const xs=points.map(p=>p.x),ys=points.map(p=>p.y),padding=90;
+    let w=Math.max(240,Math.max(...xs)-Math.min(...xs)+padding*2),h=Math.max(150,Math.max(...ys)-Math.min(...ys)+padding*2);
+    const ratio=INITIAL_VIEW.w/INITIAL_VIEW.h;if(w/h<ratio)w=h*ratio;else h=w/ratio;
+    const targetZoom=clamp(100*INITIAL_VIEW.w/w,MIN_ZOOM,MAX_ZOOM);w=100*INITIAL_VIEW.w/targetZoom;h=100*INITIAL_VIEW.h/targetZoom;
+    const cx=(Math.min(...xs)+Math.max(...xs))/2,cy=(Math.min(...ys)+Math.max(...ys))/2;view={x:cx-w/2,y:cy-h/2,w,h};applyView();toast('已适配全部地图内容');
+  }
 
   function render() {
     content.replaceChildren();
@@ -155,7 +195,7 @@
   }
   function createPointObject(kind, p, line=null) { if(kind==='stations'&&!line){toast('请点击既有地铁线来新增站点');return;} const snap=kind==='stations' ? snapToLine(p,line) : null; if(snap)p={x:snap.x,y:snap.y}; const label=kind === 'stations' ? '站点名称' : '地名或路名'; const name=window.prompt(`请输入${label}`, kind === 'stations' ? '新城站' : '中央广场'); if (name === null) return; const d=kind === 'stations' ? defaults.station : defaults.label; const obj={id:ids(),x:p.x,y:p.y,...d,name:name.trim() || (kind === 'stations'?'未命名站':'未命名'),...(snap?{level:segmentLevel(line,snap.segment),lineId:line.id,segmentIndex:snap.segment}:{})}; data[kind].push(obj); selectObject(kind,obj.id); render(); saveLocal(false); }
   function hit(e) { const node=e.target.closest?.('[data-kind]'); return node ? {kind:node.dataset.kind,id:node.dataset.id} : null; }
-  svg.addEventListener('click', e => { if (panning?.moved) return; const target=hit(e), p=toMap(e);
+  svg.addEventListener('click', e => { if (suppressClick) return; const target=hit(e), p=toMap(e);
     if (tool === 'select') { if (target) selectObject(target.kind,target.id); else { selected=null; render(); loadInspector(null); } return; }
     if (tool === 'eraser') { if (target) { data[target.kind]=data[target.kind].filter(o=>o.id!==target.id); selected=null; render(); saveLocal(false); toast('对象已删除'); } return; }
     if (tool === 'station') return createPointObject('stations',p,target?.kind==='metros'?findObject('metros',target.id):null); if (tool === 'label') return createPointObject('labels',p);
@@ -165,14 +205,20 @@
     if(['building','area'].includes(tool)){if(!draft)draft={points:[p]};else draft.points.push(p);previewDraft(p);}
   });
   svg.addEventListener('contextmenu', e => { if (['road','bus','metro','building','area'].includes(tool)) { e.preventDefault(); finishDraft(); } });
-  svg.addEventListener('pointerdown', e => { const allowPan=tool==='select'||e.button===1; if (!allowPan || hit(e)) return; panning={clientX:e.clientX,clientY:e.clientY,view:{...view},moved:false}; viewport.setPointerCapture?.(e.pointerId); });
-  svg.addEventListener('pointermove', e => { const p=toMap(e); if (panning) { const box=svg.getBoundingClientRect(); const dx=(e.clientX-panning.clientX)*panning.view.w/box.width,dy=(e.clientY-panning.clientY)*panning.view.h/box.height; view.x=panning.view.x-dx;view.y=panning.view.y-dy;svg.setAttribute('viewBox',`${view.x} ${view.y} ${view.w} ${view.h}`);panning.moved=true;viewport.classList.add('panning'); } else if (draft) previewDraft(p); });
-  svg.addEventListener('pointerup', () => { panning=null; viewport.classList.remove('panning'); });
-  viewport.addEventListener('wheel', e => { e.preventDefault(); const p=toMap(e); const factor=e.deltaY>0?1.12:.89; const nw=Math.max(280,Math.min(2600,view.w*factor)),nh=nw/1.6; view.x=p.x-(p.x-view.x)*(nw/view.w);view.y=p.y-(p.y-view.y)*(nh/view.h);view.w=nw;view.h=nh; svg.setAttribute('viewBox',`${view.x} ${view.y} ${view.w} ${view.h}`); $('#zoomStatus').textContent=`${Math.round(160000/view.w)}%`; },{passive:false});
+  svg.addEventListener('pointerdown', e => { const allowPan=tool==='select'||e.button===1||spacePanning;if(!allowPan||(!spacePanning&&e.button!==1&&hit(e)))return;panning={clientX:e.clientX,clientY:e.clientY,view:{...view},moved:false};viewport.setPointerCapture?.(e.pointerId);e.preventDefault(); });
+  svg.addEventListener('pointermove', e => { const p=toMap(e);if(panning){const box=svg.getBoundingClientRect(),dx=(e.clientX-panning.clientX)*panning.view.w/box.width,dy=(e.clientY-panning.clientY)*panning.view.h/box.height;view.x=panning.view.x-dx;view.y=panning.view.y-dy;panning.moved=panning.moved||Math.abs(e.clientX-panning.clientX)>2||Math.abs(e.clientY-panning.clientY)>2;viewport.classList.add('panning');applyView();}else if(draft)previewDraft(p); });
+  function endPan(){if(panning?.moved){suppressClick=true;setTimeout(()=>suppressClick=false,0);}panning=null;viewport.classList.remove('panning');}
+  svg.addEventListener('pointerup',endPan);svg.addEventListener('pointercancel',endPan);
+  viewport.addEventListener('wheel',e=>{e.preventDefault();const p=toMap(e),delta=clamp(e.deltaY,-160,160),target=zoomPercent()*Math.exp(-delta*.0018);setZoom(target,p);},{passive:false});
+  $('#zoomIn').addEventListener('click',()=>setZoom(zoomPercent()*1.25));$('#zoomOut').addEventListener('click',()=>setZoom(zoomPercent()*.8));
+  $('#zoomSlider').addEventListener('input',e=>setZoom(+e.target.value));$('#fitMap').addEventListener('click',fitMap);$('#resetView').addEventListener('click',resetView);
+  document.querySelectorAll('[data-pan]').forEach(button=>button.addEventListener('click',()=>button.dataset.pan==='center'?resetView():panView(button.dataset.pan)));
   document.querySelectorAll('.tool').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
   document.querySelectorAll('[data-draw-mode]').forEach(b=>b.addEventListener('click',()=>setDrawMode(b.dataset.drawMode)));
   $('#levelUp').addEventListener('click',()=>setDrawLevel(drawLevel+1));$('#levelDown').addEventListener('click',()=>setDrawLevel(drawLevel-1));
-  document.addEventListener('keydown',e=>{ if (e.target.matches('input,select')) return; const key=e.key.toLowerCase(),keys={v:'select',r:'road',b:'bus',m:'metro',t:'metro',s:'station',g:'building',a:'area',l:'label',e:'eraser'}; if (keys[key]) setTool(keys[key]); if(['road','metro'].includes(tool)&&key==='c')setDrawMode('curve');if(['road','metro'].includes(tool)&&key==='x')setDrawMode('line');if(['road','bus','metro'].includes(tool)&&e.key==='ArrowUp'){e.preventDefault();setDrawLevel(drawLevel+1);}if(['road','bus','metro'].includes(tool)&&e.key==='ArrowDown'){e.preventDefault();setDrawLevel(drawLevel-1);} if (e.key==='Escape') { draft=null;preview.replaceChildren(); } if ((e.key==='Delete'||e.key==='Backspace')&&selected){data[selected.kind]=data[selected.kind].filter(o=>o.id!==selected.obj.id);selected=null;render();saveLocal(false);} });
+  document.addEventListener('keydown',e=>{ if(e.code==='Space'&&!e.target.matches('input,select,button')){e.preventDefault();spacePanning=true;viewport.classList.add('space-pan');return;}if (e.target.matches('input,select')) return; const key=e.key.toLowerCase(),keys={v:'select',r:'road',b:'bus',m:'metro',t:'metro',s:'station',g:'building',a:'area',l:'label',e:'eraser'}; if (keys[key]) setTool(keys[key]); if(['road','metro'].includes(tool)&&key==='c')setDrawMode('curve');if(['road','metro'].includes(tool)&&key==='x')setDrawMode('line');if(['road','bus','metro'].includes(tool)&&e.key==='ArrowUp'){e.preventDefault();setDrawLevel(drawLevel+1);}if(['road','bus','metro'].includes(tool)&&e.key==='ArrowDown'){e.preventDefault();setDrawLevel(drawLevel-1);} if (e.key==='Escape') { draft=null;preview.replaceChildren(); } if ((e.key==='Delete'||e.key==='Backspace')&&selected){data[selected.kind]=data[selected.kind].filter(o=>o.id!==selected.obj.id);selected=null;render();saveLocal(false);} });
+  document.addEventListener('keydown',e=>{if(e.target.matches('input,select,button')||e.ctrlKey||e.metaKey||e.altKey)return;if(e.key==='+'||e.key==='='){e.preventDefault();setZoom(zoomPercent()*1.25);}else if(e.key==='-'||e.key==='_'){e.preventDefault();setZoom(zoomPercent()*.8);}else if(e.key==='0'){e.preventDefault();resetView();}else if(e.key==='Home'){e.preventDefault();fitMap();}});
+  document.addEventListener('keyup',e=>{if(e.code==='Space'){spacePanning=false;viewport.classList.remove('space-pan');}});window.addEventListener('blur',()=>{spacePanning=false;viewport.classList.remove('space-pan');endPan();});
   $('#objectWidth').addEventListener('input',e=>$('#widthValue').value=e.target.value); $('#labelSize').addEventListener('input',e=>$('#labelSizeValue').value=e.target.value);
   $('#roadClass').addEventListener('change',e=>{const style=roadClassStyles[e.target.value];if(!style)return;$('#objectWidth').value=style.width;$('#widthValue').value=style.width;$('#objectColor').value=style.color;});
   $('#applyStyle').addEventListener('click',()=>{ if(!selected)return; const o=selected.obj;o.name=$('#objectName').value.trim();o.color=$('#objectColor').value;o.width=+$('#objectWidth').value;o.lineStyle=$('#lineStyle').value;o.size=+$('#labelSize').value;if(selected.kind==='roads')o.roadClass=$('#roadClass').value;render();saveLocal(false);toast('样式已应用'); });
@@ -185,5 +231,5 @@
   $('#exportMap').addEventListener('click',()=>{saveLocal(false);const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.download=`${data.title||'city-map'}.json`;a.click();URL.revokeObjectURL(a.href);toast('地图 JSON 已导出');});
   $('#importMap').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{const v=normalizeMap(JSON.parse(await f.text()));if(!v)throw Error();data=v;$('#projectTitle').value=v.title;selected=null;render();saveLocal(false);toast('地图已导入');}catch{toast('无法读取此地图文件');}e.target.value='';});
   try { const stored=normalizeMap(JSON.parse(localStorage.getItem('fictional-city-map-v1'))); if(stored) { data=stored; $('#projectTitle').value=data.title; } } catch {}
-  render(); loadInspector(null);
+  render(); loadInspector(null); applyView();
 })();

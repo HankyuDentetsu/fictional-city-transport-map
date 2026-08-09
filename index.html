@@ -38,11 +38,11 @@
         <button class="tool" data-tool="area" title="逐点绘制自定义区域，右键结束 (A)"><span>▧</span>区域</button>
         <button class="tool" data-tool="label" title="单击放置地名或路名 (L)"><span>Ｔ</span>文字</button>
         <button class="tool" data-tool="eraser" title="单击删除对象 (E)"><span>⌫</span>删除</button>
-        <div class="tool-hint">右键结束绘制<br />滚轮缩放画布</div>
+        <div class="tool-hint">右键结束绘制<br />滚轮或侧栏缩放<br />空格 + 拖动平移</div>
       </aside>
 
       <section class="map-panel">
-        <div class="map-status"><span id="toolStatus">选择：单击对象进行编辑，拖动空白处平移</span><span id="zoomStatus">100%</span></div>
+        <div class="map-status"><span id="toolStatus">选择：单击对象进行编辑，拖动空白处平移</span><span class="view-summary"><span id="viewPosition">X 0 · Y 0</span><span id="zoomStatus">100%</span></span></div>
         <div id="mapViewport" class="map-viewport">
           <svg id="mapSvg" viewBox="0 0 1600 1000" xmlns="http://www.w3.org/2000/svg" aria-label="城市交通地图画布">
             <defs>
@@ -53,6 +53,22 @@
             <g id="mapContent"></g>
             <g id="previewLayer"></g>
           </svg>
+          <nav class="view-controls" aria-label="地图视图控制">
+            <div class="pan-pad" aria-label="移动地图">
+              <button data-pan="up" title="向上移动">↑</button>
+              <button data-pan="left" title="向左移动">←</button>
+              <button data-pan="center" title="重置为 100%">●</button>
+              <button data-pan="right" title="向右移动">→</button>
+              <button data-pan="down" title="向下移动">↓</button>
+            </div>
+            <button id="zoomIn" class="view-icon" title="放大">＋</button>
+            <div class="zoom-slider-wrap">
+              <input id="zoomSlider" type="range" min="25" max="500" step="5" value="100" aria-label="地图缩放比例" />
+            </div>
+            <button id="zoomOut" class="view-icon" title="缩小">−</button>
+            <button id="fitMap" class="view-text" title="适配全部地图内容">适配</button>
+            <button id="resetView" class="view-text" title="恢复初始视图">100%</button>
+          </nav>
           <div id="emptyTip" class="empty-tip">选择左侧工具，开始构建你的城市</div>
         </div>
       </section>

@@ -11,6 +11,8 @@
       <div class="brand"><span class="brand-mark">▦</span><span>架空城市交通绘图台</span></div>
       <div class="project-name"><label for="projectTitle">城市名称</label><input id="projectTitle" value="新曙光市" /></div>
       <div class="file-actions">
+        <button id="undoAction" class="quiet history-action" title="撤销 (Ctrl+Z)" aria-label="撤销" disabled>↶</button>
+        <button id="redoAction" class="quiet history-action" title="重做 (Ctrl+Y)" aria-label="重做" disabled>↷</button>
         <button id="newMap" class="quiet">新建</button>
         <button id="saveMap" class="quiet">保存</button>
         <button id="exportMap">导出 JSON</button>
@@ -49,8 +51,9 @@
               <pattern id="smallGrid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#dce5e8" stroke-width="1" /></pattern>
               <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#smallGrid)" /><path d="M 100 0 L 0 0 0 100" fill="none" stroke="#c9d6da" stroke-width="1.25" /></pattern>
             </defs>
-            <rect id="mapBackground" width="1600" height="1000" fill="url(#grid)" />
+            <rect id="mapBackground" x="-100000" y="-100000" width="200000" height="200000" fill="url(#grid)" />
             <g id="mapContent"></g>
+            <g id="selectionLayer"></g>
             <g id="previewLayer"></g>
           </svg>
           <nav class="view-controls" aria-label="地图视图控制">
@@ -63,7 +66,7 @@
             </div>
             <button id="zoomIn" class="view-icon" title="放大">＋</button>
             <div class="zoom-slider-wrap">
-              <input id="zoomSlider" type="range" min="25" max="500" step="5" value="100" aria-label="地图缩放比例" />
+              <input id="zoomSlider" type="range" min="10" max="500" step="5" value="100" aria-label="地图缩放比例" />
             </div>
             <button id="zoomOut" class="view-icon" title="缩小">−</button>
             <button id="fitMap" class="view-text" title="适配全部地图内容">适配</button>
@@ -81,8 +84,38 @@
           <div class="control" id="widthControl"><label for="objectWidth">线宽 <output id="widthValue">10</output></label><input id="objectWidth" type="range" min="3" max="30" value="10" /></div>
           <div class="control" id="roadClassControl"><label for="roadClass">道路等级</label><select id="roadClass"><option value="expressway">高速公路</option><option value="primary">一级道路</option><option value="secondary">二级道路</option><option value="local">小路</option></select></div>
           <div class="control" id="lineStyleControl"><label for="lineStyle">线路样式</label><select id="lineStyle"><option value="solid">实线</option><option value="dash">虚线</option></select></div>
+          <div id="transitLabelControl" class="control transit-label-control" hidden>
+            <label for="transitLabelShape">线路名称牌</label>
+            <select id="transitLabelShape"><option value="pill">胶囊</option><option value="rect">方牌</option><option value="circle">圆牌</option><option value="plain">纯文字</option></select>
+            <label for="transitLabelColor">背景颜色</label><input id="transitLabelColor" type="color" value="#2d8a57" />
+            <label for="transitLabelTextColor">文字颜色</label><input id="transitLabelTextColor" type="color" value="#ffffff" />
+            <label for="transitLabelSize">字号 <output id="transitLabelSizeValue">16</output></label><input id="transitLabelSize" type="range" min="11" max="32" value="16" />
+            <button id="resetTransitLabelPosition" class="quiet full-width">重置名称位置</button>
+          </div>
           <div class="control" id="labelSizeControl"><label for="labelSize">字号 <output id="labelSizeValue">22</output></label><input id="labelSize" type="range" min="12" max="42" value="22" /></div>
           <button id="applyStyle" class="full">应用到已选对象</button>
+          <div id="extensionControl" class="control extension-control" hidden>
+            <label>延长线路</label>
+            <div class="extension-actions">
+              <button id="extendStart" title="从当前线路起点继续绘制">← 起点</button>
+              <button id="extendEnd" title="从当前线路终点继续绘制">终点 →</button>
+            </div>
+          </div>
+          <div id="rerouteControl" class="control edit-control" hidden>
+            <label>修改线路部分</label>
+            <div class="edit-actions">
+              <button id="rerouteStart" title="选择截断点并重画起点一侧">重画起点侧</button>
+              <button id="rerouteEnd" title="选择截断点并重画终点一侧">重画终点侧</button>
+              <button id="rerouteMiddle" class="wide-action" title="选择起始点，落回原路线后右键完成">重画中间段</button>
+            </div>
+          </div>
+          <div id="boundaryControl" class="control edit-control" hidden>
+            <label>调整边界</label>
+            <div class="edit-actions">
+              <button id="editBoundary">拖动顶点</button>
+              <button id="cancelBoundary" class="quiet" hidden>取消</button>
+            </div>
+          </div>
         </section>
         <section class="layers">
           <p class="panel-title">图层</p>
